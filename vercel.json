@@ -10,7 +10,7 @@
       "use": "@vercel/node"
     },
     {
-      "src": "web/**",
+      "src": "Tic-Tac-Toe-A-Game-Project-main/**",
       "use": "@vercel/static"
     }
   ],
@@ -25,7 +25,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "web/$1"
+      "dest": "Tic-Tac-Toe-A-Game-Project-main/$1"
     }
   ]
 }
