@@ -1,77 +1,86 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
-const cors = require('cors');
+const { createClient } = require('@vercel/kv');
+const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 
-const app = express();
-app.use(cors()); // Enable CORS for frontend requests
+const app =express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allow requests from any origin
+        origin: "*", 
     }
 });
 
-// This is our simple, in-memory queue for waiting players.
-// In a real production system, this would be a database like Redis.
-const queue = {};
-// Example structure: { "10": [{address: "0x...", socketId: "..."}], "20": [] }
-
-app.get('/', (req, res) => {
-    res.send('Matchmaking server is running.');
+const kv = createClient({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
 });
 
-// This is the endpoint the game will call when a player wants to find a match.
-app.post('/join-queue', express.json(), (req, res) => {
-    const { address, stake, socketId } = req.body;
-    console.log(`Player ${address} with socketId ${socketId} wants to join queue with stake ${stake}`);
-
-    // Check if a player is already waiting at this stake level
-    if (queue[stake] && queue[stake].length > 0) {
-        // Match found!
-        const player1 = queue[stake].shift(); // Remove the waiting player from the queue
-        const player2 = { address, socketId };
-
-        console.log(`Match found for stake ${stake}: ${player1.address} vs ${player2.address}`);
-
-        // Here you would call your Round 1 API to create the match on-chain.
-        // For example:
-        // const matchId = ethers.id(`${player1.address}-${player2.address}-${Date.now()}`);
-        // fetch('http://localhost:3000/match/start', { 
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify({ matchId, p1: player1.address, p2: player2.address, stake })
-        // });
-
-        // Notify both players via Socket.IO that a match is found.
-        // The frontend will listen for this "matchFound" event.
-        io.to(player1.socketId).emit("matchFound", { opponent: player2.address, startsAs: "X" });
-        io.to(player2.socketId).emit("matchFound", { opponent: player1.address, startsAs: "O" });
-
-        res.status(200).json({ status: 'matched', opponent: player1.address });
-
-    } else {
-        // No match found, add player to the queue
-        if (!queue[stake]) {
-            queue[stake] = [];
-        }
-        queue[stake].push({ address, socketId });
-        
-        console.log(`Player ${address} added to queue for stake ${stake}`);
-        res.status(200).json({ status: 'queued' });
-    }
-});
+const API_GATEWAY_URL = 'https://ankita-yadav-bt-ai-ds-b.vercel.app/api'; // Your Vercel API endpoint
 
 io.on('connection', (socket) => {
-    console.log('A user connected with socket ID:', socket.id);
+    console.log(`User connected: ${socket.id}`);
+
+    socket.on('joinQueue', async ({ address, stake }) => {
+        console.log(`Player ${address} with socketId ${socket.id} wants to join queue with stake ${stake}`);
+
+        try {
+            let queue = await kv.get('matchmaking_queue') || {};
+            
+            if (queue[stake] && queue[stake].length > 0) {
+                const opponent = queue[stake].shift(); // Get the first player waiting
+                
+                if (opponent.address === address) {
+                    queue[stake].unshift(opponent);
+                    await kv.set('matchmaking_queue', queue);
+                    console.log(`Player ${address} tried to match with themselves. Waiting for another player.`);
+                    return;
+                }
+
+                console.log(`Match found for stake ${stake}: ${address} vs ${opponent.address}`);
+                
+                const matchId = uuidv4();
+                const player1 = address;
+                const player2 = opponent.address;
+
+                await kv.set('matchmaking_queue', queue);
+
+                io.to(opponent.socketId).emit('matchFound', { opponent: player1, matchId, role: 'p2' });
+                socket.emit('matchFound', { opponent: player2, matchId, role: 'p1' });
+                
+                console.log(`Notified players. Creating match on-chain with ID: ${matchId}`);
+
+                await axios.post(`${API_GATEWAY_URL}/match/start`, {
+                    matchId,
+                    p1: player1,
+                    p2: player2,
+                    stake
+                });
+
+                console.log(`On-chain match creation requested for ${matchId}`);
+
+            } else {
+                if (!queue[stake]) {
+                    queue[stake] = [];
+                }
+                queue[stake].push({ address, socketId: socket.id });
+                await kv.set('matchmaking_queue', queue);
+                console.log(`Player ${address} added to queue for stake ${stake}`);
+            }
+        } catch (error) {
+            console.error("Error during matchmaking:", error);
+        }
+    });
 
     socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-        // Here you would add logic to remove a player from the queue if they disconnect.
+        console.log(`User disconnected: ${socket.id}`);
+        removeUserFromQueue(socket.id);
     });
 });
 
-const port = 8000; // Use a different port than your Round 1 API
-server.listen(port, () => {
-    console.log(`Matchmaking server listening on port ${port}`);
+const PORT = 8000;
+server.listen(PORT, () => {
+    console.log(`Matchmaking server listening on port ${PORT}`);
 });
