@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TriX Game Interface</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        .container { max-width: 600px; margin: auto; }
+        .section { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 5px; }
+        input { width: 95%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 15px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TriX Operator Interface</h1>
+        <div class="section">
+            <h2>Create Match</h2>
+            <input type="text" id="createMatchId" placeholder="Match ID (e.g., match123)">
+            <input type="text" id="player1" placeholder="Player 1 Address">
+            <input type="text" id="player2" placeholder="Player 2 Address">
+            <input type="text" id="stake" placeholder="Stake Amount (e.g., 10)">
+            <button onclick="createMatch()">Create Match</button>
+        </div>
+
+        <div class="section">
+            <h2>Submit Result</h2>
+            <input type="text" id="resultMatchId" placeholder="Match ID (e.g., match123)">
+            <input type="text" id="winner" placeholder="Winner Address">
+            <button onclick="submitResult()">Submit Result</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

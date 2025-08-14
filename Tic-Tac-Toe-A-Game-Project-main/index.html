@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport"
+            content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>Tic-Tac-Toe: TriX Edition</title>
+        <link rel="icon" type="image/png" href="fav-icon.png">
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <section>
+            <h1 class="game--title">Tic-Tac-Toe</h1>
+
+            <div class="trix-controls">
+                <button id="connectButton" onclick="connectWallet()">Connect Wallet</button>
+                <input type="text" id="stakeInput" value="10" placeholder="Stake Amount (GT)">
+            </div>
+
+            <div class="game--container">
+                <div data-cell-index="0" class="cell"></div>
+                <div data-cell-index="1" class="cell"></div>
+                <div data-cell-index="2" class="cell"></div>
+                <div data-cell-index="3" class="cell"></div>
+                <div data-cell-index="4" class="cell"></div>
+                <div data-cell-index="5" class="cell"></div>
+                <div data-cell-index="6" class="cell"></div>
+                <div data-cell-index="7" class="cell"></div>
+                <div data-cell-index="8" class="cell"></div>
+            </div>
+            <h2 class="game--status">Connect your wallet to begin</h2>
+            <button class="game--restart">Find Match</button>
+        </section>
+
+        <div class="footer">
+            &copy; 2023 Neeraj Meena | All rights reserved.
+        </div>
+        
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+        <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+        <script src="script.js"></script>
+    </body>
+</html>
