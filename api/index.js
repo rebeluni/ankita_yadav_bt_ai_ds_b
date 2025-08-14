@@ -14,11 +14,12 @@ const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 // --- CONFIGURATION ---
 
 // const privateKey = process.env.OPERATOR_PRIVATE_KEY; // We are temporarily disabling this line
-const privateKey = "0x5c6966c782e4880456248f20c60ec20886ca8a0e308197a62abde1cce9f4546e";
+const privateKey = process.env.OPERATOR_PRIVATE_KEY;
 const wallet = new ethers.Wallet(privateKey, provider);
 
 // You'll get these addresses after you deploy your contracts
-const PLAY_GAME_ADDRESS = "0x7ee5A3B438a0688dF12608839cE7A8B6279BA858";
+const PLAY_GAME_ADDRESS = process.env.PLAY_GAME_CONTRACT_ADDRESS;
+
 // The ABI is the instruction manual for the contract. We get this from the artifacts folder.
 const playGameAbi = require('../artifacts/contracts/PlayGame.sol/PlayGame.json').abi;
 
