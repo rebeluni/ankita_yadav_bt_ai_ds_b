@@ -48,12 +48,15 @@ io.on('connection', (socket) => {
                 io.to(opponent.socketId).emit('matchFound', { opponent: address, matchId, role: 'p2' });
                 socket.emit('matchFound', { opponent: opponent.address, matchId, role: 'p1' });
                 console.log(`Notified players. Creating match on-chain with ID: ${matchId}`);
-                await axios.post(`${API_GATEWAY_URL}/start`, {
+                
+                // *** THE FIX IS ON THIS LINE ***
+                await axios.post(`${API_GATEWAY_URL}/match/start`, {
                     matchId,
                     p1: address,
                     p2: opponent.address,
                     stake
                 });
+
             } else {
                 if (!queue[stake]) {
                     queue[stake] = [];
