@@ -1,3 +1,8 @@
+console.log("Dependencies loaded:", {
+  dotenv: !!require.resolve("dotenv"),
+  socket: !!require.resolve("socket.io"),
+  express: !!require.resolve("express")
+});
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
