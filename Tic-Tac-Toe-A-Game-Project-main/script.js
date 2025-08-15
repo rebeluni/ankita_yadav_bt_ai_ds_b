@@ -18,7 +18,7 @@ let socket;
 let provider, signer, gameTokenContract, playGameContract;
 
 const RENDER_URL = "https://trix-backend-final.onrender.com";
-const API_URL = RENDER_URL;
+const API_URL = RENDER_URL; 
 
 const gameTokenAddress = "0x2FE6ad84f58A05D542D587b84DfE3ea8009544D5";
 const playGameAddress = "0x7ee5A3B438a0688dF12608839cE7A8B6279BA858";
@@ -61,6 +61,8 @@ function findMatch() {
     }
     statusDisplay.textContent = `Looking for a match with a ${stake} GT stake...`;
     
+    if (socket?.connected) socket.disconnect();
+
     socket = io(RENDER_URL, {
         transports: ["websocket"],
         auth: {
@@ -73,6 +75,9 @@ function findMatch() {
         statusDisplay.textContent = 'Connected to server. Waiting for a match...';
         socket.emit("joinQueue", { stake }, (response) => {
             console.log("Queue status:", response);
+            if (response?.error) {
+                statusDisplay.textContent = response.error;
+            }
         });
     });
 

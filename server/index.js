@@ -15,7 +15,10 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: [
+      "https://ankita-yadav-bt-ai-ds-b.vercel.app",
+      "http://localhost:3000"
+    ],
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -52,23 +55,22 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
     const address = socket.userAddress;
-    console.log(`New connection: ${socket.id} from address ${address}`);
+    console.log(`New connection: ${socket.id} (${address})`);
 
     if (connectedWallets.has(address)) {
-        console.log(`Duplicate connection detected for ${address}. Disconnecting new socket.`);
+        const err = `Wallet ${address} already connected`;
+        console.log(err);
+        socket.emit("error", { error: err });
         socket.disconnect(true);
         return;
     }
     connectedWallets.add(address);
 
-    socket.on('joinQueue', ({ stake }) => {
-        if (stake === undefined) {
-            return;
-        }
-        console.log(`Player ${address} queued (stake: ${stake})`);
+    socket.on('joinQueue', ({ stake }, callback = () => {}) => {
+        if (!stake) return callback({ error: "Missing stake amount" });
 
-        if (queue[stake]?.some(p => p.address === address)) {
-            return;
+        for (const s in queue) {
+            queue[s] = queue[s].filter(p => p.address !== address);
         }
 
         if (queue[stake]?.length > 0) {
@@ -76,7 +78,7 @@ io.on('connection', (socket) => {
             const player2 = { address, socketId: socket.id };
             const matchId = uuidv4();
 
-            console.log(`Match found! ${player1.address} vs ${player2.address}`);
+            console.log(`Match found: ${player1.address} vs ${player2.address}`);
 
             io.to(player1.socketId).emit('matchFound', {
                 opponent: player2.address,
@@ -91,9 +93,11 @@ io.on('connection', (socket) => {
                 role: 'p2',
                 stake
             });
+            callback({ success: true, matchId });
         } else {
             queue[stake] = queue[stake] || [];
             queue[stake].push({ address, socketId: socket.id });
+            callback({ success: true, status: 'waiting' });
         }
     });
 
