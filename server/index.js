@@ -24,8 +24,7 @@ const wallet = new ethers.Wallet(privateKey, provider);
 const playGameAddress = process.env.PLAY_GAME_CONTRACT_ADDRESS;
 
 // --- CORRECTED FILE PATH ---
-const abiPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'PlayGame.sol', 'PlayGame.json');
-const playGameAbi = require(abiPath).abi;
+const abiPath = path.join(__dirname, 'artifacts', 'contracts', 'PlayGame.sol', 'PlayGame.json');const playGameAbi = require(abiPath).abi;
 // --- END CORRECTION ---
 
 const playGameContract = new ethers.Contract(playGameAddress, playGameAbi, wallet);
