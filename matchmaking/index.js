@@ -8,7 +8,7 @@ const kv = createClient({
     token: process.env.KV_REST_API_TOKEN,
 });
 
-const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'https://ankita-yadav-bt-ai-ds-b.vercel.app/api'; 
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL;
 
 module.exports = (req, res) => {
     if (!res.socket.server.io) {
@@ -16,9 +16,8 @@ module.exports = (req, res) => {
         
         const io = new Server(res.socket.server, {
             path: "/socket.io/",
-            cors: {
-                origin: "*",
-            },
+            addTrailingSlash: false,
+            cors: { origin: "*" },
         });
 
         io.on('connection', (socket) => {

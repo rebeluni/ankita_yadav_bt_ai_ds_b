@@ -64,6 +64,7 @@ function findMatch() {
 
     socket = io(VERCEL_URL, {
         path: "/socket.io/",
+        transports: ["websocket"] // This is the crucial line for Vercel
     });
 
     socket.on('connect', () => {
