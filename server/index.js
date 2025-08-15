@@ -18,7 +18,7 @@ const io = new Server(server, {
   cors: {
     origin: [
       "https://ankita-yadav-bt-ai-ds-b.vercel.app",
-      "http://localhost:3000"
+      "http://localhost:3000" // For local testing
     ],
     methods: ["GET", "POST"],
     credentials: true
@@ -84,8 +84,13 @@ io.on('connection', (socket) => {
   if (connectedWallets.has(address)) {
     const existingSocketId = connectedWallets.get(address);
     console.log(`⚠️ Duplicate connection for ${address}, disconnecting previous: ${existingSocketId}`);
-    io.to(existingSocketId).emit('error', { error: "New connection detected" });
-    io.to(existingSocketId).disconnect(true);
+    
+    // *** BUG FIX #1: Correct way to disconnect a specific socket ***
+    const existingSocket = io.sockets.sockets.get(existingSocketId);
+    if (existingSocket) {
+        existingSocket.emit('error', { error: "New connection detected" });
+        existingSocket.disconnect(true);
+    }
   }
   connectedWallets.set(address, socket.id);
 
@@ -153,8 +158,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  // *** BUG FIX #2: Safely handle the ping event ***
   // Keepalive handler
-  socket.on('ping', (cb) => cb());
+  socket.on('ping', (cb) => {
+    if (typeof cb === 'function') {
+        cb();
+    }
+  });
 });
 
 // API Endpoints
