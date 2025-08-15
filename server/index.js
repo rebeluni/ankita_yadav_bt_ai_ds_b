@@ -83,9 +83,6 @@ io.on('connection', (socket) => {
   // Prevent duplicate connections
   if (connectedWallets.has(address)) {
     const existingSocketId = connectedWallets.get(address);
-    console.log(`⚠️ Duplicate connection for ${address}, disconnecting previous: ${existingSocketId}`);
-    
-    // *** BUG FIX #1: Correct way to disconnect a specific socket ***
     const existingSocket = io.sockets.sockets.get(existingSocketId);
     if (existingSocket) {
         existingSocket.emit('error', { error: "New connection detected" });
@@ -95,7 +92,7 @@ io.on('connection', (socket) => {
   connectedWallets.set(address, socket.id);
 
   // Matchmaking queue handler
-  socket.on('joinQueue', ({ stake }, callback = () => {}) => {
+  socket.on('joinQueue', async ({ stake }, callback = () => {}) => {
     try {
       if (!stake || isNaN(stake)) {
         return callback({ error: "Invalid stake amount" });
@@ -109,34 +106,48 @@ io.on('connection', (socket) => {
       // Check for matching opponent
       if (queue[stake]?.length > 0) {
         const player1 = queue[stake].shift();
+        const player2 = { address, socketId: socket.id };
         const matchId = uuidv4();
 
-        console.log(`🎮 Match found: ${player1.address} vs ${address} (Stake: ${stake})`);
+        console.log(`🎮 Match found: ${player1.address} vs ${player2.address}. Creating on-chain...`);
         
-        // Notify both players
-        io.to(player1.socketId).emit('matchFound', {
-          opponent: address,
-          matchId,
-          role: 'p1',
-          stake
-        });
-        
-        socket.emit('matchFound', {
-          opponent: player1.address,
-          matchId,
-          role: 'p2',
-          stake
-        });
-        
-        return callback({ success: true, matchId });
+        // *** THE FIX: CREATE MATCH ON-CHAIN FIRST ***
+        try {
+            const stakeAmount = ethers.parseUnits(stake.toString(), 18);
+            const tx = await playGameContract.createMatch(matchId, player1.address, player2.address, stakeAmount);
+            await tx.wait();
+            console.log(`✅ On-chain match created: ${tx.hash}. Notifying players.`);
+
+            // NOW that the match exists, notify the players.
+            io.to(player1.socketId).emit('matchFound', {
+              opponent: player2.address,
+              matchId,
+              role: 'p1',
+              stake
+            });
+            
+            socket.emit('matchFound', {
+              opponent: player1.address,
+              matchId,
+              role: 'p2',
+              stake
+            });
+            
+            return callback({ success: true, matchId });
+
+        } catch (onChainError) {
+            console.error('❌ On-chain match creation failed:', onChainError);
+            // Put player1 back in the queue so they can find another match
+            queue[stake].unshift(player1);
+            return callback({ error: "Failed to create match on-chain." });
+        }
+      } else {
+        // Add to queue if no match found
+        queue[stake] = queue[stake] || [];
+        queue[stake].push({ address, socketId: socket.id });
+        console.log(`⏳ Player queued: ${address} (Stake: ${stake})`);
+        callback({ success: true, status: 'waiting' });
       }
-
-      // Add to queue if no match found
-      queue[stake] = queue[stake] || [];
-      queue[stake].push({ address, socketId: socket.id });
-      console.log(`⏳ Player queued: ${address} (Stake: ${stake})`);
-      callback({ success: true, status: 'waiting' });
-
     } catch (err) {
       console.error('Queue error:', err);
       callback({ error: "Internal server error" });
@@ -150,15 +161,10 @@ io.on('connection', (socket) => {
     
     // Clean up from all queues
     for (const stake in queue) {
-      const initialLength = queue[stake].length;
       queue[stake] = queue[stake].filter(p => p.socketId !== socket.id);
-      if (initialLength !== queue[stake].length) {
-        console.log(`🧹 Removed ${address} from ${stake} queue`);
-      }
     }
   });
 
-  // *** BUG FIX #2: Safely handle the ping event ***
   // Keepalive handler
   socket.on('ping', (cb) => {
     if (typeof cb === 'function') {
@@ -168,60 +174,38 @@ io.on('connection', (socket) => {
 });
 
 // API Endpoints
+// The /match/start endpoint is no longer needed by the server itself,
+// but it's good practice to keep it for potential direct calls or future features.
 app.post('/match/start', async (req, res) => {
   try {
     const { matchId, p1, p2, stake } = req.body;
-    
     if (!matchId || !p1 || !p2 || stake === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
-    console.log(`⚡ Creating match ${matchId}...`);
     const stakeAmount = ethers.parseUnits(stake.toString(), 18);
     const tx = await playGameContract.createMatch(matchId, p1, p2, stakeAmount);
     const receipt = await tx.wait();
-    
-    console.log(`✅ Match created: ${tx.hash}`);
-    return res.json({ 
-      success: true,
-      txHash: tx.hash,
-      blockNumber: receipt.blockNumber
-    });
-
+    console.log(`✅ Match created via API: ${tx.hash}`);
+    return res.json({ success: true, txHash: tx.hash, blockNumber: receipt.blockNumber });
   } catch (error) {
-    console.error('Match creation failed:', error);
-    return res.status(500).json({ 
-      error: error.reason || 'Transaction failed',
-      details: error.message 
-    });
+    console.error('API Match creation failed:', error);
+    return res.status(500).json({ error: error.reason || 'Transaction failed', details: error.message });
   }
 });
 
 app.post('/match/result', async (req, res) => {
   try {
     const { matchId, winner } = req.body;
-    
     if (!matchId || !winner) {
       return res.status(400).json({ error: 'Missing matchId or winner' });
     }
-
-    console.log(`⚡ Submitting result for match ${matchId}...`);
     const tx = await playGameContract.commitResult(matchId, winner);
     const receipt = await tx.wait();
-    
     console.log(`✅ Result submitted: ${tx.hash}`);
-    return res.json({ 
-      success: true,
-      txHash: tx.hash,
-      blockNumber: receipt.blockNumber
-    });
-
+    return res.json({ success: true, txHash: tx.hash, blockNumber: receipt.blockNumber });
   } catch (error) {
     console.error('Result submission failed:', error);
-    return res.status(500).json({ 
-      error: error.reason || 'Transaction failed',
-      details: error.message 
-    });
+    return res.status(500).json({ error: error.reason || 'Transaction failed', details: error.message });
   }
 });
 
