@@ -59,25 +59,19 @@ function findMatch() {
     if (!stake || isNaN(stake) || parseFloat(stake) <= 0) {
         return alert("Please enter a valid stake amount.");
     }
+    
     statusDisplay.textContent = `Looking for a match with a ${stake} GT stake...`;
     
-    socket = io(RENDER_URL, {
-        transports: ["websocket"],
-        withCredentials: true,
-    });
+    socket = io(RENDER_URL);
 
     socket.on('connect', () => {
         console.log('Successfully connected to matchmaking server!');
-        socket.emit("joinQueue", {
-            address: userAddress,
-            stake: stake
-        }, (response) => {
-            console.log("Queue status:", response);
-        });
+        statusDisplay.textContent = 'Connected to server. Waiting for a match...';
+        socket.emit('joinQueue', { address: userAddress, stake });
     });
-
+    
     socket.on('matchFound', handleMatchFound);
-
+    
     socket.on('connect_error', (err) => {
         console.error("Connection Error:", err);
         statusDisplay.textContent = "Could not connect to server.";
