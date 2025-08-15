@@ -21,8 +21,7 @@ const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const privateKey = process.env.OPERATOR_PRIVATE_KEY;
 const wallet = new ethers.Wallet(privateKey, provider);
 const playGameAddress = process.env.PLAY_GAME_CONTRACT_ADDRESS;
-const playGameAbi = require('../artifacts/contracts/PlayGame.sol/PlayGame.json').abi;
-const playGameContract = new ethers.Contract(playGameAddress, playGameAbi, wallet);
+const playGameAbi = require(__dirname + '/../artifacts/contracts/PlayGame.sol/PlayGame.json').abi;const playGameContract = new ethers.Contract(playGameAddress, playGameAbi, wallet);
 
 const queue = {};
 
