@@ -1,8 +1,3 @@
-console.log("Dependencies loaded:", {
-  dotenv: !!require.resolve("dotenv"),
-  socket: !!require.resolve("socket.io"),
-  express: !!require.resolve("express")
-});
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -10,7 +5,7 @@ const { Server } = require("socket.io");
 const { ethers } = require('ethers');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
-const path = require('path'); // <-- ADD THIS LINE
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -20,80 +15,167 @@ const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
         origin: "*",
+        methods: ["GET", "POST"]
     }
 });
 
+// ========== ENV VALIDATION ==========
+const requiredEnvVars = ['RPC_URL', 'OPERATOR_PRIVATE_KEY', 'PLAY_GAME_CONTRACT_ADDRESS'];
+for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) throw new Error(`Missing environment variable: ${envVar}`);
+}
+
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-const privateKey = process.env.OPERATOR_PRIVATE_KEY;
-const wallet = new ethers.Wallet(privateKey, provider);
-const playGameAddress = process.env.PLAY_GAME_CONTRACT_ADDRESS;
+const wallet = new ethers.Wallet(process.env.OPERATOR_PRIVATE_KEY, provider);
 
-// --- CORRECTED FILE PATH ---
-const abiPath = path.join(__dirname, 'artifacts', 'contracts', 'PlayGame.sol', 'PlayGame.json');const playGameAbi = require(abiPath).abi;
-// --- END CORRECTION ---
+let playGameAbi;
+try {
+    const pathsToTry = [
+        path.join(__dirname, 'artifacts', 'contracts', 'PlayGame.sol', 'PlayGame.json'),
+        path.join(__dirname, '..', 'artifacts', 'contracts', 'PlayGame.sol', 'PlayGame.json')
+    ];
+    
+    for (const abiPath of pathsToTry) {
+        try {
+            playGameAbi = require(abiPath).abi;
+            console.log(`✅ ABI loaded from: ${abiPath}`);
+            break;
+        } catch (e) {
+            console.log(`⚠️  Failed to load ABI from: ${abiPath}`);
+        }
+    }
 
-const playGameContract = new ethers.Contract(playGameAddress, playGameAbi, wallet);
+    if (!playGameAbi) {
+        throw new Error("Could not load ABI from any path");
+    }
+} catch (err) {
+    console.error('❌ ABI loading failed:', err.message);
+    process.exit(1);
+}
 
+const playGameContract = new ethers.Contract(
+    process.env.PLAY_GAME_CONTRACT_ADDRESS,
+    playGameAbi,
+    wallet
+);
+
+// ========== MATCHMAKING QUEUE ==========
 const queue = {};
 
+// ========== API ENDPOINTS ==========
 app.post('/match/start', async (req, res) => {
     const { matchId, p1, p2, stake } = req.body;
+    
+    if (!matchId || !p1 || !p2 || stake === undefined) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
     try {
-        console.log(`Creating match ${matchId}...`);
+        console.log(`🏁 Creating match ${matchId}...`);
         const stakeAmount = ethers.parseUnits(stake.toString(), 18);
         const tx = await playGameContract.createMatch(matchId, p1, p2, stakeAmount);
-        await tx.wait();
-        console.log(`Match ${matchId} created successfully! Tx: ${tx.hash}`);
-        res.status(200).json({ message: 'Match created successfully', txHash: tx.hash });
+        const receipt = await tx.wait();
+        
+        console.log(`🎉 Match created! TX: ${tx.hash}`);
+        res.status(200).json({ 
+            message: 'Match created',
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber
+        });
     } catch (error) {
-        console.error('Error creating match:', error);
-        res.status(500).json({ error: 'Failed to create match' });
+        console.error('💥 Match creation failed:', error);
+        res.status(500).json({ 
+            error: 'Match creation failed',
+            details: error.reason || error.message
+        });
     }
 });
 
 app.post('/match/result', async (req, res) => {
     const { matchId, winner } = req.body;
+    
+    if (!matchId || !winner) {
+        return res.status(400).json({ error: 'Missing matchId or winner' });
+    }
+
     try {
-        console.log(`Submitting result for match ${matchId}...`);
+        console.log(`🏁 Submitting result for match ${matchId}...`);
         const tx = await playGameContract.commitResult(matchId, winner);
-        await tx.wait();
-        console.log(`Result for ${matchId} submitted! Winner: ${winner}. Tx: ${tx.hash}`);
-        res.status(200).json({ message: 'Result submitted successfully', txHash: tx.hash });
+        const receipt = await tx.wait();
+        
+        console.log(`🎉 Result submitted! Winner: ${winner}. TX: ${tx.hash}`);
+        res.status(200).json({ 
+            message: 'Result submitted',
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber
+        });
     } catch (error) {
-        console.error('Error submitting result:', error);
-        res.status(500).json({ error: 'Failed to submit result' });
+        console.error('💥 Result submission failed:', error);
+        res.status(500).json({ 
+            error: 'Result submission failed',
+            details: error.reason || error.message
+        });
     }
 });
 
+// ========== SOCKET.IO HANDLERS ==========
 io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
+    console.log(`🔌 New connection: ${socket.id}`);
 
-    socket.on('joinQueue', ({ address, stake }) => {
-        console.log(`Player ${address} wants to join queue with stake ${stake}`);
-        if (queue[stake] && queue[stake].length > 0) {
+    socket.on('joinQueue', ({ address, stake }, callback) => {
+        if (!address || stake === undefined) {
+            return callback({ error: 'Missing address or stake' });
+        }
+
+        console.log(`🎮 Player ${address} queued (stake: ${stake})`);
+        
+        if (queue[stake]?.length > 0) {
             const player1 = queue[stake].shift();
             const player2 = { address, socketId: socket.id };
             const matchId = uuidv4();
 
-            console.log(`Match found for stake ${stake}: ${player1.address} vs ${player2.address}`);
+            console.log(`🤝 Match found! ${player1.address} vs ${player2.address}`);
 
-            io.to(player1.socketId).emit('matchFound', { opponent: player2.address, matchId, role: 'p1' });
-            io.to(player2.socketId).emit('matchFound', { opponent: player1.address, matchId, role: 'p2' });
+            io.to(player1.socketId).emit('matchFound', { 
+                opponent: player2.address, 
+                matchId, 
+                role: 'p1',
+                stake
+            });
+            
+            socket.emit('matchFound', { 
+                opponent: player1.address, 
+                matchId, 
+                role: 'p2',
+                stake
+            });
+            
+            callback({ success: true, matchId });
         } else {
-            if (!queue[stake]) {
-                queue[stake] = [];
-            }
+            queue[stake] = queue[stake] || [];
             queue[stake].push({ address, socketId: socket.id });
-            console.log(`Player ${address} added to queue for stake ${stake}`);
+            callback({ success: true, status: 'waiting' });
         }
     });
 
     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
+        console.log(`❌ Disconnected: ${socket.id}`);
+        // Clean up queue
+        for (const stake in queue) {
+            queue[stake] = queue[stake].filter(p => p.socketId !== socket.id);
+        }
     });
 });
 
+// ========== SERVER START ==========
 const port = process.env.PORT || 3001;
 server.listen(port, () => {
-    console.log(`Unified server listening on port ${port}`);
+    console.log(`🚀 Server ready on port ${port}`);
+    console.log(`📜 Contract: ${playGameAddress}`);
+    console.log(`👛 Operator: ${wallet.address}`);
+});
+
+// ========== ERROR HANDLING ==========
+process.on('unhandledRejection', (err) => {
+    console.error('Unhandled rejection:', err);
 });
