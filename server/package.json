@@ -1,7 +1,7 @@
 {
   "name": "trix-server",
   "version": "1.0.0",
-  "description": "",
+  "description": "Unified backend for TriX Game",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
