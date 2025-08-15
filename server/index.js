@@ -107,13 +107,17 @@ io.on('connection', (socket) => {
       if (queue[stake]?.length > 0) {
         const player1 = queue[stake].shift();
         const player2 = { address, socketId: socket.id };
-        const matchId = uuidv4();
-
-        console.log(`🎮 Match found: ${player1.address} vs ${player2.address}. Creating on-chain...`);
         
-        // *** THE FIX: CREATE MATCH ON-CHAIN FIRST ***
+        // *** FIX #1: Create a unique string and hash it to get a valid bytes32 value. ***
+        const uniqueIdString = uuidv4();
+        const matchId = ethers.keccak256(ethers.toUtf8Bytes(uniqueIdString));
+
+        console.log(`🎮 Match found: ${player1.address} vs ${player2.address}. Creating on-chain with ID: ${matchId}`);
+        
+        // *** FIX #2: CREATE MATCH ON-CHAIN FIRST to prevent race condition ***
         try {
             const stakeAmount = ethers.parseUnits(stake.toString(), 18);
+            // We now pass the correctly formatted matchId to the contract.
             const tx = await playGameContract.createMatch(matchId, player1.address, player2.address, stakeAmount);
             await tx.wait();
             console.log(`✅ On-chain match created: ${tx.hash}. Notifying players.`);
@@ -121,14 +125,14 @@ io.on('connection', (socket) => {
             // NOW that the match exists, notify the players.
             io.to(player1.socketId).emit('matchFound', {
               opponent: player2.address,
-              matchId,
+              matchId, // Send the same bytes32 ID to the players
               role: 'p1',
               stake
             });
             
             socket.emit('matchFound', {
               opponent: player1.address,
-              matchId,
+              matchId, // Send the same bytes32 ID to the players
               role: 'p2',
               stake
             });
