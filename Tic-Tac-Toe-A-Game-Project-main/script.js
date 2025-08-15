@@ -45,8 +45,8 @@ function initializeSocket() {
     });
 
     socket.on('matchFound', handleMatchFound);
-    socket.on('gameReady', handleGameReady); // New listener
-    socket.on('opponentStakingFailed', handleOpponentStakingFailed); // New listener
+    socket.on('gameReady', handleGameReady); // New listener as per advice
+    socket.on('opponentStakingFailed', handleOpponentStakingFailed); // New listener as per advice
     
     socket.on('disconnect', (reason) => {
         console.log('Disconnected:', reason);
@@ -125,17 +125,22 @@ async function handleMatchFound(data) {
     statusDisplay.textContent = `Matched! You're ${currentPlayerSymbol}. Approving tokens...`;
 
     try {
-        const stakeAmount = ethers.parseUnits(stakeInput.value, 18);
+        const stakeAmount = ethers.parseUnits(data.stake.toString(), 18);
         
-        const approveTx = await gameTokenContract.approve(playGameAddress, stakeAmount);
-        await approveTx.wait();
+        // Step 1: Check existing allowance first
+        const currentAllowance = await gameTokenContract.allowance(userAddress, playGameAddress);
+        if (currentAllowance < stakeAmount) {
+            statusDisplay.textContent = "Approving tokens...";
+            const approveTx = await gameTokenContract.approve(playGameAddress, stakeAmount);
+            await approveTx.wait();
+        }
         
+        // Step 2: Execute stake
         statusDisplay.textContent = "Approval successful. Staking now...";
-        
         const stakeTx = await playGameContract.stake(matchId);
         await stakeTx.wait();
         
-        // Notify server that this client has completed staking
+        // Step 3: Notify server that this client has completed staking
         socket.emit('stakingComplete', { matchId });
         statusDisplay.textContent = `Staked! Waiting for opponent...`;
 
