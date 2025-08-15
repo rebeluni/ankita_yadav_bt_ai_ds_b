@@ -17,7 +17,7 @@ const io = new Server(server, {
   cors: {
     origin: [
       "https://ankita-yadav-bt-ai-ds-b.vercel.app",
-      "http://localhost:3000"
+      "http://localhost:3000" 
     ],
     methods: ["GET", "POST"],
     credentials: true

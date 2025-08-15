@@ -71,7 +71,7 @@ function findMatch() {
     });
 
     socket.on('connect', () => {
-        console.log('Successfully connected to matchmaking server!');
+        console.log('Successfully connected to matchmaking server with ID:', socket.id);
         statusDisplay.textContent = 'Connected to server. Waiting for a match...';
         socket.emit("joinQueue", { stake }, (response) => {
             console.log("Queue status:", response);
@@ -82,6 +82,11 @@ function findMatch() {
     });
 
     socket.on('matchFound', handleMatchFound);
+
+    socket.on('disconnect', (reason) => {
+        console.log('Disconnected:', reason);
+        statusDisplay.textContent = 'Connection lost. Please try again.';
+    });
 
     socket.on('connect_error', (err) => {
         console.error("Connection Error:", err.message);
