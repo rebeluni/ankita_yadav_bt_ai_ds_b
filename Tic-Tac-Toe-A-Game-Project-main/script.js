@@ -17,8 +17,8 @@ let matchId = "";
 let socket;
 let provider, signer, gameTokenContract, playGameContract;
 
-const VERCEL_URL = "https://ankita-yadav-bt-ai-ds-b.vercel.app"; 
-const API_URL = `${VERCEL_URL}/api`;
+const VERCEL_URL = "https://trix-backend-server.onrender.com";
+const API_URL = "https://trix-backend-server.onrender.com";
 
 const gameTokenAddress = "0x2FE6ad84f58A05D542D587b84DfE3ea8009544D5";
 const playGameAddress = "0x7ee5A3B438a0688dF12608839cE7A8B6279BA858";
