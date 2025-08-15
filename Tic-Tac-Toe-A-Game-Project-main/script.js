@@ -17,8 +17,8 @@ let matchId = "";
 let socket;
 let provider, signer, gameTokenContract, playGameContract;
 
-const VERCEL_URL = "https://trix-backend-server.onrender.com";
-const API_URL = "https://trix-backend-server.onrender.com";
+const RENDER_URL = "https://trix-backend-final.onrender.com";
+const API_URL = RENDER_URL; 
 
 const gameTokenAddress = "0x2FE6ad84f58A05D542D587b84DfE3ea8009544D5";
 const playGameAddress = "0x7ee5A3B438a0688dF12608839cE7A8B6279BA858";
@@ -59,17 +59,21 @@ function findMatch() {
     if (!stake || isNaN(stake) || parseFloat(stake) <= 0) {
         return alert("Please enter a valid stake amount.");
     }
-
     statusDisplay.textContent = `Looking for a match with a ${stake} GT stake...`;
-
-    socket = io(VERCEL_URL, {
-        path: "/socket.io/",
-        transports: ["websocket"] // This is the crucial line for Vercel
+    
+    socket = io(RENDER_URL, {
+        transports: ["websocket"],
+        withCredentials: true,
     });
 
     socket.on('connect', () => {
         console.log('Successfully connected to matchmaking server!');
-        socket.emit('joinQueue', { address: userAddress, stake });
+        socket.emit("joinQueue", {
+            address: userAddress,
+            stake: stake
+        }, (response) => {
+            console.log("Queue status:", response);
+        });
     });
 
     socket.on('matchFound', handleMatchFound);
@@ -83,10 +87,8 @@ function findMatch() {
 async function handleMatchFound(data) {
     console.log("Match found!", data);
     statusDisplay.textContent = `Match found! You are '${data.role === 'p1' ? 'X' : 'O'}'`;
-    
     matchId = data.matchId;
     currentPlayerSymbol = data.role === 'p1' ? 'X' : 'O';
-
     try {
         const stake = stakeInput.value;
         const stakeInWei = ethers.parseUnits(stake, 18);
@@ -127,13 +129,11 @@ function handleResultValidation() {
             break;
         }
     }
-
     if (roundWon) {
         gameActive = false;
         submitResult();
         return;
     }
-
     const roundDraw = !gameState.includes("");
     if (roundDraw) {
         statusDisplay.textContent = "Game ended in a draw!";
