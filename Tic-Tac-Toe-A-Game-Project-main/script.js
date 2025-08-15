@@ -18,7 +18,7 @@ let socket;
 let provider, signer, gameTokenContract, playGameContract;
 
 const RENDER_URL = "https://trix-backend-final.onrender.com";
-const API_URL = RENDER_URL; 
+const API_URL = RENDER_URL;
 
 const gameTokenAddress = "0x2FE6ad84f58A05D542D587b84DfE3ea8009544D5";
 const playGameAddress = "0x7ee5A3B438a0688dF12608839cE7A8B6279BA858";
@@ -59,21 +59,27 @@ function findMatch() {
     if (!stake || isNaN(stake) || parseFloat(stake) <= 0) {
         return alert("Please enter a valid stake amount.");
     }
-    
     statusDisplay.textContent = `Looking for a match with a ${stake} GT stake...`;
     
-    socket = io(RENDER_URL);
+    socket = io(RENDER_URL, {
+        transports: ["websocket"],
+        auth: {
+            token: userAddress
+        }
+    });
 
     socket.on('connect', () => {
         console.log('Successfully connected to matchmaking server!');
         statusDisplay.textContent = 'Connected to server. Waiting for a match...';
-        socket.emit('joinQueue', { address: userAddress, stake });
+        socket.emit("joinQueue", { stake }, (response) => {
+            console.log("Queue status:", response);
+        });
     });
-    
+
     socket.on('matchFound', handleMatchFound);
-    
+
     socket.on('connect_error', (err) => {
-        console.error("Connection Error:", err);
+        console.error("Connection Error:", err.message);
         statusDisplay.textContent = "Could not connect to server.";
     });
 }
@@ -95,7 +101,7 @@ async function handleMatchFound(data) {
         const stakeTx = await playGameContract.stake(matchId);
         await stakeTx.wait();
         
-        statusDisplay.textContent = "Stake successful! Waiting for opponent...";
+        statusDisplay.textContent = "Stake successful! Game is live.";
         gameActive = true;
     } catch (error) {
         console.error("On-chain staking failed:", error);
