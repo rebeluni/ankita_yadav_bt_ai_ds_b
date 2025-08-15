@@ -17,7 +17,7 @@ let matchId = "";
 let socket;
 let provider, signer, gameTokenContract, playGameContract;
 
-const RENDER_URL = "https://trix-backend-final.onrender.com";
+const RENDER_URL = "https://trix-backend-server.onrender.com";
 const API_URL = RENDER_URL; 
 
 const gameTokenAddress = "0x2FE6ad84f58A05D542D587b84DfE3ea8009544D5";
