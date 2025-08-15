@@ -171,7 +171,7 @@ io.on('connection', (socket) => {
 const port = process.env.PORT || 3001;
 server.listen(port, () => {
     console.log(`🚀 Server ready on port ${port}`);
-    console.log(`📜 Contract: ${playGameAddress}`);
+    console.log(`📜 Contract: ${process.env.PLAY_GAME_CONTRACT_ADDRESS}`);
     console.log(`👛 Operator: ${wallet.address}`);
 });
 
