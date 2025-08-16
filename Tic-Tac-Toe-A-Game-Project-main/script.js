@@ -29,10 +29,40 @@ connectButton.addEventListener('click', connectWallet);
 findMatchButton.addEventListener('click', findMatch);
 cells.forEach(cell => cell.addEventListener('click', handleCellClick));
 
+function initializeSocket() {
+    if (socket?.connected) socket.disconnect();
+
+    socket = io(RENDER_URL, {
+        transports: ["websocket"],
+        auth: { token: userAddress },
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+    });
+
+    socket.on('connect', () => {
+        console.log('Connected to server with ID:', socket.id);
+        statusDisplay.textContent = 'Connected. Ready to find a match.';
+    });
+    socket.on('matchFound', handleMatchFound);
+    socket.on('gameReady', handleGameReady);
+    socket.on('matchExpired', resetGameState);
+    socket.on('stakingError', (data) => {
+        statusDisplay.textContent = `Staking error: ${data.error}`;
+        resetGameState();
+    });
+    socket.on('disconnect', () => {
+        statusDisplay.textContent = 'Connection lost. Please refresh.';
+    });
+    socket.on('connect_error', () => {
+        statusDisplay.textContent = 'Could not connect to server.';
+    });
+}
+
 async function connectWallet() {
     if (typeof window.ethereum === "undefined") {
         statusDisplay.textContent = "Please install MetaMask!";
-        return alert("Please install MetaMask to use this dApp.");
+        return;
     }
     try {
         provider = new ethers.BrowserProvider(window.ethereum);
@@ -45,56 +75,34 @@ async function connectWallet() {
         connectButton.textContent = 'Connected';
         connectButton.disabled = true;
         statusDisplay.textContent = `Connected: ${userAddress.substring(0, 6)}...`;
+        
+        initializeSocket();
+        
     } catch (error) {
-        console.error("Failed to connect wallet:", error);
-        statusDisplay.textContent = "Failed to connect wallet.";
+        console.error("Wallet connection failed:", error);
+        statusDisplay.textContent = "Connection failed. Try again.";
     }
 }
 
 function findMatch() {
-    if (!signer) {
-        return alert("Please connect your wallet first.");
+    if (!signer) return alert("Connect wallet first");
+    if (!socket || !socket.connected) {
+        initializeSocket();
+        return;
     }
     const stake = stakeInput.value;
-    if (!stake || isNaN(stake) || parseFloat(stake) <= 0) {
-        return alert("Please enter a valid stake amount.");
+    if (!stake || isNaN(stake) || stake <= 0) {
+        return alert("Enter valid stake amount (GT)");
     }
-    statusDisplay.textContent = `Looking for a match with a ${stake} GT stake...`;
-    
-    if (socket?.connected) socket.disconnect();
-
-    socket = io(RENDER_URL, {
-        transports: ["websocket"],
-        auth: {
-            token: userAddress
-        }
-    });
-
-    socket.on('connect', () => {
-        console.log('Successfully connected to matchmaking server with ID:', socket.id);
-        statusDisplay.textContent = 'Connected to server. Waiting for a match...';
-        socket.emit("joinQueue", { stake });
-    });
-
-    socket.on('matchFound', handleMatchFound);
-    socket.on('gameReady', handleGameReady);
-    socket.on('matchExpired', resetGameState);
-
-    socket.on('disconnect', (reason) => {
-        console.log('Disconnected:', reason);
-    });
-
-    socket.on('connect_error', (err) => {
-        console.error("Connection Error:", err.message);
-        statusDisplay.textContent = "Could not connect to server.";
-    });
+    statusDisplay.textContent = `Finding match (${stake} GT)...`;
+    socket.emit("joinQueue", { stake });
 }
 
 async function handleMatchFound(data) {
-    console.log("Match found!", data);
+    console.log("Match found:", data);
     matchId = data.matchId;
     currentPlayerSymbol = data.role === 'p1' ? 'X' : 'O';
-    statusDisplay.textContent = `Match found! You are '${currentPlayerSymbol}'. Approving...`;
+    statusDisplay.textContent = `Match found! You're ${currentPlayerSymbol}. Approving...`;
 
     try {
         const stakeAmount = ethers.parseUnits(stakeInput.value, 18);
@@ -110,10 +118,14 @@ async function handleMatchFound(data) {
         const stakeTx = await playGameContract.stake(matchId, { gasLimit: 300000 });
         await stakeTx.wait();
 
-        const matchInfo = await playGameContract.matches(matchId);
-        const hasStaked = (data.role === 'p1') ? matchInfo.p1_staked : matchInfo.p2_staked;
-        
-        if (!hasStaked) {
+        let verified = false;
+        for (let i = 0; i < 5; i++) {
+            const matchInfo = await playGameContract.matches(matchId);
+            verified = (data.role === 'p1') ? matchInfo.p1_staked : matchInfo.p2_staked;
+            if (verified) break;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        if (!verified) {
             throw new Error("On-chain staking verification failed");
         }
 
@@ -124,13 +136,7 @@ async function handleMatchFound(data) {
         console.error("Staking error:", error);
         statusDisplay.textContent = `Staking failed: ${error.message.split('(')[0]}`;
         socket.emit('stakingFailed', { matchId });
-        
-        setTimeout(() => {
-            if (!gameActive) {
-                resetGameState();
-                statusDisplay.textContent = "Find a new match.";
-            }
-        }, 3000);
+        setTimeout(resetGameState, 3000);
     }
 }
 
@@ -146,7 +152,7 @@ function resetGameState() {
     gameActive = false;
     gameState = ["", "", "", "", "", "", "", "", ""];
     cells.forEach(cell => cell.innerHTML = "");
-    statusDisplay.textContent = "Match expired or failed. Find a new match.";
+    statusDisplay.textContent = "Find a new match.";
 }
 
 function handleCellPlayed(clickedCell, clickedCellIndex) {
@@ -163,12 +169,10 @@ function handleResultValidation() {
             break;
         }
     }
-
     if (roundWon) {
         gameActive = false;
         return submitResult();
     }
-
     if (!gameState.includes("")) {
         gameActive = false;
         statusDisplay.textContent = "Game drawn!";
@@ -177,7 +181,6 @@ function handleResultValidation() {
 
 async function submitResult() {
     if (!matchId) return;
-    
     try {
         statusDisplay.textContent = "Submitting result...";
         const response = await fetch(`${API_URL}/match/result`, {
@@ -185,7 +188,6 @@ async function submitResult() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ matchId, winner: userAddress })
         });
-        
         const data = await response.json();
         if (data.txHash) {
             const explorerLink = `https://sepolia.etherscan.io/tx/${data.txHash}`;
@@ -204,7 +206,6 @@ function handleCellClick(clickedCellEvent) {
     const clickedCell = clickedCellEvent.target;
     const clickedCellIndex = parseInt(clickedCell.getAttribute('data-cell-index'));
     if (gameState[clickedCellIndex] !== "") return;
-    
     handleCellPlayed(clickedCell, clickedCellIndex);
     handleResultValidation();
 }

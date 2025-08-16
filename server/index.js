@@ -14,10 +14,16 @@ app.use(express.json());
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    },
+    connectionStateRecovery: {
+        maxDisconnectionDuration: 120000,
+        skipMiddlewares: true
+    },
+    pingInterval: 25000,
+    pingTimeout: 20000
 });
 
 const requiredEnvVars = ['RPC_URL', 'OPERATOR_PRIVATE_KEY', 'PLAY_GAME_CONTRACT_ADDRESS'];
@@ -75,6 +81,7 @@ io.on('connection', (socket) => {
     socket.on('joinQueue', async ({ stake }) => {
         try {
             if (!stake || isNaN(stake)) return;
+
             for (const stakeAmount in queue) {
                 queue[stakeAmount] = queue[stakeAmount].filter(p => p.address !== address);
             }
@@ -123,16 +130,21 @@ io.on('connection', (socket) => {
         if (!match) return;
 
         try {
-            const matchInfo = await playGameContract.matches(matchId);
-            const isP1 = address === Object.keys(match.players)[0];
-            const hasStaked = isP1 ? matchInfo.p1_staked : matchInfo.p2_staked;
+            let verified = false;
+            for (let i = 0; i < 5; i++) {
+                const matchInfo = await playGameContract.matches(matchId);
+                const isP1 = address === Object.keys(match.players)[0];
+                verified = isP1 ? matchInfo.p1_staked : matchInfo.p2_staked;
+                if (verified) break;
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
 
-            if (!hasStaked) {
-                throw new Error("On-chain staking not confirmed");
+            if (!verified) {
+                throw new Error("On-chain staking verification failed after retries");
             }
 
             match.players[address].staked = true;
-            console.log(`Player ${address} staked verified for match ${matchId}`);
+            console.log(`Player ${address} staking verified for match ${matchId}`);
 
             const bothStaked = Object.values(match.players).every(p => p.staked);
             if (bothStaked) {
@@ -142,8 +154,9 @@ io.on('connection', (socket) => {
                 });
             }
         } catch (error) {
-            console.error(`Staking verification failed for ${address}:`, error);
-            socket.emit('stakingError', { error: "Staking verification failed" });
+            console.error(`Staking verification failed: ${error.message}`);
+            socket.emit('stakingError', { error: "Staking verification failed", matchId });
+            activeMatches.delete(matchId);
         }
     });
 
@@ -155,6 +168,24 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+setInterval(async () => {
+    const now = Math.floor(Date.now() / 1000);
+    for (const [matchId, match] of activeMatches) {
+        try {
+            const matchInfo = await playGameContract.matches(matchId);
+            if (matchInfo.startTime > 0 && now - Number(matchInfo.startTime) > 900) { 
+                console.log(`Cleaning up expired match ${matchId}`);
+                Object.values(match.players).forEach(player => {
+                    io.to(player.socketId)?.emit('matchExpired');
+                });
+                activeMatches.delete(matchId);
+            }
+        } catch (error) {
+            console.error(`Error cleaning up match ${matchId}:`, error);
+        }
+    }
+}, 60000);
 
 app.post('/match/result', async (req, res) => {
     try {
