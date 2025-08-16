@@ -116,8 +116,7 @@ io.on('connection', (socket) => {
                   [player1.address]: { socketId: player1.socketId, staked: false },
                   [player2.address]: { socketId: player2.socketId, staked: false }
                 },
-                stakeAmount: stake,
-                createdAt: Date.now() // For stale match cleanup
+                stakeAmount: stake
             };
             activeMatches.set(matchId, match);
 
